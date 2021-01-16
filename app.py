@@ -12,11 +12,11 @@ import os
 
 from metaod.models.utility import prepare_trained_model
 from metaod.models.predict_metaod import select_model
-
 from scipy.io import loadmat
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
 
 from pyod.utils.utility import standardizer
 from pyod.models.abod import ABOD
@@ -52,7 +52,7 @@ def index():
     return render_template('index.html')
 
 # Route that will process the file upload
-@app.route('/upload', methods=['POST'])
+@app.route('/report', methods=['POST'])
 def upload():
     file = request.files['file']
     filename = secure_filename(file.filename)
@@ -67,9 +67,10 @@ def upload():
                 data = access_data_csv(filename)
             elif extension == 'json':
                 data = access_data_json(filename)
-            make_model(data)
-            report(data)
-    return redirect(url_for('index'))
+            clf_used = make_model(data)
+            df = report(data)
+    return render_template('report.html',clasificator = clf_used ,file_name=filename, tables=[df.to_html(classes='data')], titles=df.columns.values)
+
 
 
 def access_data_mat(filename):
@@ -78,12 +79,22 @@ def access_data_mat(filename):
 
 def access_data_csv(filename):
     data = pd.read_csv(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+    check_NAN = data.isnull().values.any()
+    if check_NAN == True:
+        imputer = SimpleImputer(missing_values=np.nan, strategy='mean')
+        imputer = imputer.fit(data)
+        data = imputer.transform(data)
     data = data.to_numpy()
     data = np.delete(data,0,1)
     return data
 
 def access_data_json(filename):
     data = pd.read_json(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+    check_NAN = data.isnull().values.any()
+    if check_NAN == True:
+        imputer = SimpleImputer(missing_values=np.nan, strategy='mean')
+        imputer = imputer.fit(data)
+        data = imputer.transform(data)
     data = data.to_numpy()
     return data
 
@@ -126,6 +137,7 @@ def make_model(data):
             nu, kernel = get_param(param)
             model = OCSVM(kernel=kernel, nu=float(nu))
         dump(model, "static/model/clf.joblib")
+        return clf
 
 def report(data):
     clf = load('static/model/clf.joblib')
@@ -134,9 +146,10 @@ def report(data):
     labels, decision_score = clf.labels_, clf.decision_scores_
     labels_T = labels.reshape((-1, 1))
     decision_score_T = decision_score.reshape((-1, 1))
+    labels_T = np.where(labels_T == 1, "Anomalia", "Obserwacja")
     data_with_labels = np.append(labels_T,data, axis=1)
     dataframe = pd.DataFrame(data_with_labels)
-    
+    return dataframe
 
 def get_param(params):
     p1 = params[0]
@@ -145,6 +158,7 @@ def get_param(params):
     p1 = p1.split(",")[0]
     p2 = p2.split(")")[0]
     return p1,p2
+
 
 if __name__ == '__main__':
     app.run(

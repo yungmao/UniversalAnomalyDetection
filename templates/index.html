@@ -1,20 +1,22 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pl">
   <head>
+      <title>System wykrywania anomalii</title>
     <link href="//netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap.min.css"
           rel="stylesheet">
   </head>
   <body>
     <div class="container">
-      <div class="header">
-        <h3 class="text-muted">System Wykrywania Anomalii</h3>
+      <div class="page-header">
+        <h3 class="text-primary">System Wykrywania Anomalii</h3>
       </div>
       <hr/>
       <div>
-
-      <form action="upload" method="post" enctype="multipart/form-data">
-        <input type="file" name="file"><br /><br />
-        <input type="submit" value="Analizuj">
+        <h4>Wybierz dane do analizy(JSON, CSV)</h4>
+      <form action="report" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" ><br /><br />
+       <!-- <input type="submit" value="Analizuj"> -->
+         <button type="submit" class="btn btn-primary">Analizuj</button>
       </form>
       </div>
     </div>

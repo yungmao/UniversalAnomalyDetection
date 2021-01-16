@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+        <link href="//netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap.min.css"
+          rel="stylesheet">
+    <title>Raport</title>
+</head>
+<body>
+      <div class="page-header">
+        <h3 class="text-primary">Raport</h3>
+      </div>
+      <h4>Dane dla {{ file_name }}</h4>
+      <h4>Wykorzystany algorytm: {{ clasificator }}</h4>
+{% for table in tables %}
+            {{ table|safe }}
+{% endfor %}
+</body>
+</html>
