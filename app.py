@@ -67,9 +67,11 @@ def upload():
                 data = access_data_csv(filename)
             elif extension == 'json':
                 data = access_data_json(filename)
-            clf_used = make_model(data)
+            clf_used, parameters = make_model(data)
             df = report(data)
-    return render_template('report.html',clasificator = clf_used ,file_name=filename, tables=[df.to_html(classes='data')], titles=df.columns.values)
+            clean_df = clean_data(df)
+
+    return render_template('report.html',clasificator = clf_used ,parameters = parameters ,file_name=filename, tables=[df.to_html(classes='data')], titles=df.columns.values)
 
 
 
@@ -111,33 +113,51 @@ def make_model(data):
         best_clf = name.split(" ")
         clf = best_clf[0]
         param = best_clf[1:]
+        parameters = {0:0}
         if clf == "ABOD":
             n_neighbour = param[0]
             n_neighbour = int(n_neighbour)
             model = ABOD(n_neighbors=n_neighbour, method='fast')
+            parameters = {'n_neighbours': n_neighbour}
         if clf == "COF":
             n_neighbours = param[0]
             model = COF(n_neighbours=int(n_neighbours))
+            parameters = {'n_neighbours': n_neighbours}
         if clf == "HBOS":
             n_histograms, tolerance = get_param(param)
             model = HBOS(n_bins=int(n_histograms), tol=float(tolerance))
+            parameters = {'n_histograms': n_histograms,
+                          'tolerance': tolerance}
         if clf == "Iforest":
             n_estimators, max_features = get_param(param)
             model = IForest(n_estimators=int(n_estimators), max_features=float(max_features))
+            parameters = {'n_estimators': n_estimators,
+                          'max_features': max_features}
         if clf == "kNN":
             n_neighbours, method = get_param(param)
+            method = method[1:-1]
             model = KNN(n_neighbors=int(n_neighbours), method=method)
+            parameters = {'n_neighours': n_neighbours,
+                          'method': method}
         if clf == "LODA":
             n_bins, n_random_cuts = get_param(param)
             model = LODA(n_bins=int(n_bins), n_random_cuts=int(n_random_cuts))
+            parameters = {'n_bins': n_bins,
+                          'n_random_cuts': n_random_cuts}
         if clf == "LOF":
             n_neighbours, method = get_param(param)
+            method = method[1:-1]
             model = LOF(n_neighbours=int(n_neighbours),metric=method)
+            parameters = {'n_neighbours': n_neighbours,
+                          'method': method}
         if clf == "OCSVM":
             nu, kernel = get_param(param)
-            model = OCSVM(kernel=kernel, nu=float(nu))
+            kernel = kernel[1:-1]
+            model = OCSVM(kernel=str(kernel), nu=float(nu))
+            parameters = {'nu': nu,
+                          'kernel': kernel}
         dump(model, "static/model/clf.joblib")
-        return clf
+        return clf, parameters
 
 def report(data):
     clf = load('static/model/clf.joblib')
@@ -145,7 +165,6 @@ def report(data):
     clf.fit(data_standarize)
     labels, decision_score = clf.labels_, clf.decision_scores_
     labels_T = labels.reshape((-1, 1))
-    decision_score_T = decision_score.reshape((-1, 1))
     labels_T = np.where(labels_T == 1, "Anomalia", "Obserwacja")
     data_with_labels = np.append(labels_T,data, axis=1)
     dataframe = pd.DataFrame(data_with_labels)
@@ -159,6 +178,15 @@ def get_param(params):
     p2 = p2.split(")")[0]
     return p1,p2
 
+def make_pdf_report():
+    return 0
+
+def clean_data(dataframe):
+    df = dataframe.copy()
+    indexNames = dataframe[dataframe[0] == "Anomalia"].index
+    df.drop(indexNames, inplace=True)
+    df.drop(df.columns[0], inplace=True, axis=1)
+    return df
 
 if __name__ == '__main__':
     app.run(
