@@ -15,7 +15,7 @@ from metaod.models.predict_metaod import select_model
 from scipy.io import loadmat
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import RobustScaler
 from sklearn.impute import SimpleImputer
 
 from pyod.utils.utility import standardizer
@@ -27,6 +27,9 @@ from pyod.models.knn import KNN
 from pyod.models.loda import LODA
 from pyod.models.lof import LOF
 from pyod.models.ocsvm import OCSVM
+
+from fpdf import FPDF
+from datetime import datetime, timedelta
 
 from joblib import dump, load
 
@@ -68,12 +71,16 @@ def upload():
             elif extension == 'json':
                 data = access_data_json(filename)
             clf_used, parameters = make_model(data)
-            df = report(data)
-            clean_df = clean_data(df)
+            df, prediction = report(data=data, algorithm=clf_used)
+            EDA(df,prediction= prediction)
+            clean_data(df, filename, extension)
+            df.rename(columns={0: "Wynik"}, inplace=True)
+            for col_number in range(1, len(df.columns)):
+                df.rename(columns={col_number: "Cecha " + str(col_number)}, inplace=True)
+            for row_number in range(0, len(df)):
+                df.rename(index={row_number: "Obserwacja " + str(row_number)}, inplace=True)
 
-    return render_template('report.html',clasificator = clf_used ,parameters = parameters ,file_name=filename, tables=[df.to_html(classes='data')], titles=df.columns.values)
-
-
+    return render_template('report.html',clasificator = clf_used ,parameters= parameters ,file_name=filename, tables=[df.to_html(classes='data')], titles=df.columns.values)
 
 def access_data_mat(filename):
     data = loadmat(os.path.join(app.config['UPLOAD_FOLDER'], filename))
@@ -101,10 +108,9 @@ def access_data_json(filename):
     return data
 
 def make_model(data):
-    X_train, X_test = train_test_split(data, train_size=0.4, shuffle=True)
-    X_train_norm, X_test_norm = standardizer(X_train, X_test)
-    X_train = StandardScaler(X_train).copy
-    X_test = StandardScaler(X_test).copy
+    transformer = RobustScaler().fit(data)
+    Data_RobustScaled = transformer.transform(data)
+    X_train, X_test = train_test_split(Data_RobustScaled, train_size=0.4, shuffle=True)
     prepare_trained_model()
     selected_models = select_model(X_train, n_selection=1)
     for foo, model in enumerate(selected_models):
@@ -118,57 +124,60 @@ def make_model(data):
             n_neighbour = param[0]
             n_neighbour = int(n_neighbour)
             model = ABOD(n_neighbors=n_neighbour, method='fast')
-            parameters = {'n_neighbours': n_neighbour}
+            parameters = {'Liczba sąsiadów': n_neighbour}
         if clf == "COF":
             n_neighbours = param[0]
             model = COF(n_neighbours=int(n_neighbours))
-            parameters = {'n_neighbours': n_neighbours}
+            parameters = {'Liczba sąsiadów': n_neighbours}
         if clf == "HBOS":
             n_histograms, tolerance = get_param(param)
             model = HBOS(n_bins=int(n_histograms), tol=float(tolerance))
-            parameters = {'n_histograms': n_histograms,
-                          'tolerance': tolerance}
+            parameters = {'Liczba słupków histogramu': n_histograms,
+                          'Tolerancja': tolerance}
         if clf == "Iforest":
             n_estimators, max_features = get_param(param)
             model = IForest(n_estimators=int(n_estimators), max_features=float(max_features))
-            parameters = {'n_estimators': n_estimators,
-                          'max_features': max_features}
+            parameters = {'Liczba estymatorów': n_estimators,
+                          'Limit cech': max_features}
         if clf == "kNN":
             n_neighbours, method = get_param(param)
             method = method[1:-1]
             model = KNN(n_neighbors=int(n_neighbours), method=method)
-            parameters = {'n_neighours': n_neighbours,
-                          'method': method}
+            parameters = {'Liczba sąsiadów': n_neighbours,
+                          'Metoda': method}
         if clf == "LODA":
             n_bins, n_random_cuts = get_param(param)
             model = LODA(n_bins=int(n_bins), n_random_cuts=int(n_random_cuts))
-            parameters = {'n_bins': n_bins,
-                          'n_random_cuts': n_random_cuts}
+            parameters = {'Liczba słupków histogramu': n_bins,
+                          'Liczba losowych cięć': n_random_cuts}
         if clf == "LOF":
             n_neighbours, method = get_param(param)
             method = method[1:-1]
             model = LOF(n_neighbours=int(n_neighbours),metric=method)
-            parameters = {'n_neighbours': n_neighbours,
-                          'method': method}
+            parameters = {'Liczba sąsiadów': n_neighbours,
+                          'Metoda': method}
         if clf == "OCSVM":
             nu, kernel = get_param(param)
             kernel = kernel[1:-1]
             model = OCSVM(kernel=str(kernel), nu=float(nu))
             parameters = {'nu': nu,
-                          'kernel': kernel}
+                          'Jądro': kernel}
         dump(model, "static/model/clf.joblib")
         return clf, parameters
 
-def report(data):
+def report(data, algorithm):
     clf = load('static/model/clf.joblib')
-    data_standarize = StandardScaler(data).copy
+    transformer = RobustScaler().fit(data)
+    data_standarize = transformer.transform(data)
     clf.fit(data_standarize)
+    pred = clf.predict_proba(data_standarize)
     labels, decision_score = clf.labels_, clf.decision_scores_
     labels_T = labels.reshape((-1, 1))
-    labels_T = np.where(labels_T == 1, "Anomalia", "Obserwacja")
+    labels_T = np.where(labels_T == 1, "Anomalia", "Prawidłowość")
     data_with_labels = np.append(labels_T,data, axis=1)
     dataframe = pd.DataFrame(data_with_labels)
-    return dataframe
+
+    return dataframe, pred
 
 def get_param(params):
     p1 = params[0]
@@ -178,16 +187,33 @@ def get_param(params):
     p2 = p2.split(")")[0]
     return p1,p2
 
-def make_pdf_report():
-    return 0
-
-def clean_data(dataframe):
+def clean_data(dataframe, filename, extension):
     df = dataframe.copy()
     indexNames = dataframe[dataframe[0] == "Anomalia"].index
     df.drop(indexNames, inplace=True)
     df.drop(df.columns[0], inplace=True, axis=1)
-    return df
+    if extension == "json":
+        df.to_json('static/clean_data/clean_'+str(filename))
+    elif extension == "csv":
+        df.to_csv('static/clean_data/clean_'+str(filename))
 
+def make_pdf_report():
+    return 0
+
+def EDA(df, prediction):
+    dataframe_rows = len(df)
+    dataframe_col = df.columns
+    foo = df[0].value_counts()
+    number_anomalies = foo["Anomalia"]
+    percentage_anomaly = (number_anomalies/dataframe_rows)*100
+    index_non_anomalies = df[df[0] != "Anomalia"].index
+    index_anomalies = df[df[0] == "Anomalia"].index
+    prob = np.delete(prediction,index_non_anomalies,axis=0)
+    index_proba = []
+    for i in range(len(index_anomalies)):
+        index_proba.append([index_anomalies[i],prob[i][1]])
+    index_proba = np.array(index_proba)
+    return 0
 if __name__ == '__main__':
     app.run(
         host="0.0.0.0",

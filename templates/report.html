@@ -12,14 +12,31 @@
       </div>
       <h4>Dane dla: {{ file_name }}</h4>
       <h4>Wykorzystany algorytm: {{ clasificator }}</h4>
-      <h4>Parametry: {% for param in parameters.items() %}
-            {{ param}}
+      <h4>Parametry: {% for key,value in parameters.items()%}
+          {{ key }}: {{ value }},
           {% endfor %}
       </h4>
-       <button type="submit" class="btn btn-outline-secondary">Raport PDF</button>
-      <button type="submit" class="btn btn-outline-secondary">Oczyszczone dane</button> <br>
+       <button type="submit" class="btn btn-outline-secondary">Pobierz raport</button>
+      <a href="/static/clean_data/clean_{{ file_name }}">
+      <button type="submit" class="btn btn-outline-secondary">Pobierz oczyszczone dane</button> <br>
+      </a>
+
+      <script>
+          function myFunction() {
+             var x = document.getElementById("table");
+             if (x.style.display === "none") {
+                 x.style.display = "block";
+             } else {
+            x.style.display = "none";
+             }
+          }
+      </script>
+      <br>
+      <button onclick="myFunction()" class="btn btn-secondary">Pokaż/ukryj dane</button>
+      <div id="table">
 {% for table in tables %}
             {{ table|safe }}
 {% endfor %}
+      </div>
 </body>
 </html>
