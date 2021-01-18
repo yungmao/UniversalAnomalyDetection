@@ -16,7 +16,9 @@
           {{ key }}: {{ value }},
           {% endfor %}
       </h4>
+            <a href="/static/reports/raport_{{ rep }}.pdf">
        <button type="submit" class="btn btn-outline-secondary">Pobierz raport</button>
+            </a>
       <a href="/static/clean_data/clean_{{ file_name }}">
       <button type="submit" class="btn btn-outline-secondary">Pobierz oczyszczone dane</button> <br>
       </a>

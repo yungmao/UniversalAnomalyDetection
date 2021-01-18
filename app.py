@@ -29,7 +29,8 @@ from pyod.models.lof import LOF
 from pyod.models.ocsvm import OCSVM
 
 from fpdf import FPDF
-from datetime import datetime, timedelta
+import datetime
+localtime = str(datetime.date.today())
 
 from joblib import dump, load
 
@@ -72,15 +73,15 @@ def upload():
                 data = access_data_json(filename)
             clf_used, parameters = make_model(data)
             df, prediction = report(data=data, algorithm=clf_used)
-            EDA(df,prediction= prediction)
+            number, indexes, fraction = EDA(df,prediction= prediction)
             clean_data(df, filename, extension)
             df.rename(columns={0: "Wynik"}, inplace=True)
             for col_number in range(1, len(df.columns)):
                 df.rename(columns={col_number: "Cecha " + str(col_number)}, inplace=True)
             for row_number in range(0, len(df)):
                 df.rename(index={row_number: "Obserwacja " + str(row_number)}, inplace=True)
-
-    return render_template('report.html',clasificator = clf_used ,parameters= parameters ,file_name=filename, tables=[df.to_html(classes='data')], titles=df.columns.values)
+            make_pdf_report(filename,clf_used,parameters,number,fraction, indexes)
+    return render_template('report.html',clasificator = clf_used ,parameters= parameters ,file_name=filename,rep = filename.rsplit('.', 1)[0], tables=[df.to_html(classes='data')], titles=df.columns.values)
 
 def access_data_mat(filename):
     data = loadmat(os.path.join(app.config['UPLOAD_FOLDER'], filename))
@@ -153,9 +154,9 @@ def make_model(data):
         if clf == "LOF":
             n_neighbours, method = get_param(param)
             method = method[1:-1]
-            model = LOF(n_neighbours=int(n_neighbours),metric=method)
+            model = LOF(n_neighbors=int(n_neighbours), metric=method)
             parameters = {'Liczba sąsiadów': n_neighbours,
-                          'Metoda': method}
+                          'Metryka': method}
         if clf == "OCSVM":
             nu, kernel = get_param(param)
             kernel = kernel[1:-1]
@@ -197,15 +198,12 @@ def clean_data(dataframe, filename, extension):
     elif extension == "csv":
         df.to_csv('static/clean_data/clean_'+str(filename))
 
-def make_pdf_report():
-    return 0
-
 def EDA(df, prediction):
     dataframe_rows = len(df)
     dataframe_col = df.columns
     foo = df[0].value_counts()
     number_anomalies = foo["Anomalia"]
-    percentage_anomaly = (number_anomalies/dataframe_rows)*100
+    percentage_anomaly = (number_anomalies/dataframe_rows)
     index_non_anomalies = df[df[0] != "Anomalia"].index
     index_anomalies = df[df[0] == "Anomalia"].index
     prob = np.delete(prediction,index_non_anomalies,axis=0)
@@ -213,7 +211,126 @@ def EDA(df, prediction):
     for i in range(len(index_anomalies)):
         index_proba.append([index_anomalies[i],prob[i][1]])
     index_proba = np.array(index_proba)
-    return 0
+    return number_anomalies, index_anomalies, percentage_anomaly
+
+def make_pdf_report(filename,algorithm,param,num, percentage, index):
+    # A4
+    WIDTH = 210
+    HEIGHT = 297
+    pdf = PDF()
+    #pdf.set_doc_option("core_fonts_encoding",'cp1252')
+    pdf.print_chapter(filename,algorithm,param,num, percentage, index)
+    pdf.output('static/reports/raport_'+filename+'.pdf', 'F')
+
+
+class PDF(FPDF):
+    def header(self):
+        # Arial bold 15
+        self.set_y(5)
+        self.set_font('Arial', 'I', size=10)
+        w = self.get_string_width(localtime)+5
+        self.cell(0,9,"Utworzono: "+localtime, ln=0, align='R')
+        self.set_y(15)
+        self.set_font('Arial', 'BI', 20)
+        # Calculate width of title and position
+        title = "Raport Systemu Wykywania Anomalii"
+        w = self.get_string_width(title) + 6
+        self.set_x((210 - w) / 2)
+        # Colors of frame, background and text
+        self.set_draw_color(16,77,17)
+        self.set_fill_color(255,255,255)
+        self.set_text_color(23,23,240)
+        # Thickness of frame (1 mm)
+        self.set_line_width(0.5)
+        # Title
+        self.cell(w, 9, title, ln=1, align='C', border=0, fill=False    )
+        # Line break
+        self.ln(10)
+
+    def footer(self):
+        # Position at 1.5 cm from bottom
+        self.set_y(-15)
+        # Arial italic 8
+        self.set_font('Arial', 'I', 8)
+        # Text color in gray
+        self.set_text_color(128)
+        # Page number
+        self.cell(0, 10, 'Strona ' + str(self.page_no()), 0, 0, 'C')
+
+    def chapter_title(self, num, label):
+        # Arial 12
+        self.set_font('Arial', '', 12)
+        # Background color
+        self.set_fill_color(200, 220, 255)
+        # Title
+        self.cell(0, 6, '%d.  %s' % (num, label), 0, 1, 'L', 1)
+        # Line break
+        self.ln(4)
+
+    def important_data(self, filename, algorithm, parameters, number_of_anomalies,percentage, index):
+        key, value = parameters.items()
+        self.set_font('Arial','B', size=12)
+        self.set_text_color(0,0,0)
+        w = self.get_string_width("Analizowano: ")
+        self.cell(w,5,txt="Analizowano: ", ln=0)
+        self.set_font('Arial', size=12)
+        w = self.get_string_width(filename)
+        self.cell(w,5,txt= filename, ln=1)
+
+        self.set_font('Arial','B', size=12)
+        w = self.get_string_width("Wykorzystany algorytm: ")
+        self.cell(w,5,txt="Wykorzystany algorytm: ", ln=0)
+        self.set_font('Arial', size=12)
+        w = self.get_string_width(algorithm)
+        self.cell(w,5,txt=algorithm, ln=1)
+        '''
+        w = self.get_string_width("O prametrach:   ")
+        self.set_font('Arial','B', size=12)
+        self.cell(w, 5, txt="O prametrach: ", ln=0)
+        self.set_font('Arial', size=12)
+        for i in range(len(key)):
+            w = self.get_string_width(str(key[i])+": "+str(value[i]))
+            self.cell(w,5,txt=str(key[i])+": "+str(value[i]), ln=0)
+            if i!=len(key)-1:
+                self.cell(3,5,txt=',   ',ln=0)
+            else:
+                self.ln()
+        '''
+        self.set_font('Arial', 'B', size=12)
+        w = self.get_string_width("Wykrytych anomalii:  ")
+        self.cell(w, 5, txt="Wykrytych anomalii:  ", ln=0)
+        self.set_font('Arial', size=12)
+        w = self.get_string_width(str(number_of_anomalies))
+        self.cell(w, 5, txt=str(number_of_anomalies), ln=1)
+
+        self.set_font('Arial', 'B', size=12)
+        w = self.get_string_width("Procent anomalii w zbiorze danych:  ")
+        self.cell(w, 5, txt="Procent anomalii w zbiorze danych:  ", ln=0)
+        self.set_font('Arial', size=12)
+        percentage = str(percentage*100)
+        if len(percentage)>5:
+            percentage = percentage[:5]
+        w = self.get_string_width(percentage+"%")
+        self.cell(w, 5, txt=percentage+"%", ln=1)
+
+        self.set_font('Arial', 'B', size=12)
+        w = self.get_string_width("Obserwacje uznane za anomalie:  ")
+        self.cell(w, 5, txt="Obserwacje uznane za anomalie: ", ln=0)
+        self.set_font('Arial', size=12)
+        txt = ""
+        for ind in index:
+            txt += str(str(ind) + ",")
+        self.multi_cell(0, 5, txt)
+
+    def results(self):
+        print(0)
+
+    def print_chapter(self,filename,algorithm,param,num, percentage, index):
+        self.add_page()
+        self.chapter_title(1, 'Wynik analizy')
+        self.important_data(filename,algorithm,param,num, percentage, index)
+
+
 if __name__ == '__main__':
     app.run(
         host="0.0.0.0",
